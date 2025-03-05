@@ -167,6 +167,7 @@ b209ea91ad69ef36f2cf0fcbbc24c739fd10464cf545b20bea8572ebdc3c36fa
 
 ## Resources
 
+- [Exploiting Format String Vulnerabilities](https://cs155.stanford.edu/papers/formatstring-1.2.pdf)
 - [Format-String Vulnerability](https://fengweiz.github.io/20fa-cs315/labs/lab3-slides-format-string.pdf)
 - [Exploit 101 - Format Strings](https://axcheron.github.io/exploit-101-format-strings)
 - [Format String Vulnerability](https://hackinglab.cz/en/blog/format-string-vulnerability)
