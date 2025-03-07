@@ -1,3 +1,5 @@
+# Level6
+
 ## Walkthrough
 
 We list the files in the current home directory.
@@ -14,7 +16,6 @@ dr-x--x--x  1 root   root    340 Sep 23  2015 ..
 -rw-r--r--  1 level6 level6  675 Apr  3  2012 .profile
 level6@RainFall:~$ file level6
 level6: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), dynamically linked (uses shared libs), for GNU/Linux 2.6.24, BuildID[sha1]=0xb1a5ce594393de0f273c64753cede6da01744479, not stripped
-
 ```
 
 The file is owned by **level7** and has the **setuid** bit.
