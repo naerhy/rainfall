@@ -22,7 +22,7 @@ level3: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV),
 
 The file is owned by **level4** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -54,7 +54,7 @@ Non-debugging symbols:
 0x080485dc  _fini
 ```
 
-There are 2 interesting functions: `main()` and `v()`.
+There are 2 user-defined functions: `main()` and `v()`.
 
 ```
 (gdb) disas main
@@ -68,7 +68,7 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-The `main()` function only calls the `v()` function.
+The `main()` function calls the `v()` function.
 
 ```
 (gdb) disas v
@@ -104,54 +104,35 @@ End of assembler dump.
 ```
 
 The `v()` function:
-- calls `fgets()` to read input into a buffer located at `ebp - 0x208`
-- calls `printf()` to print the buffer to stdout
-- retrieves the value of a global variable stored at memory address `0x804988c` into the `eax` register
-- compares the value of `eax` with `0x40` (64 in decimal) and calls `system("/bin/sh")` if the condition is met
+- calls `fgets()` to read user input and store it in `[ebp - 0x208]`
+- calls `printf()` to print `fgets()` buffer
+- retrieves the value stored at memory address `0x804988c` and compares it with `0x40`
+- calls `system()` to execute `/bin/sh` if the condition is met
 
-`v()` is vulnerable to a format string vulnerability which occurs when an user input is improperly used as a format string in functions like `printf()`, allowing attackers to manipulate memory, access sensitive data, or execute arbitrary code.  
+`v()` is vulnerable to a **format string vulnerability** which occurs when an user input is improperly used as a format string in functions like `printf()`, allowing attackers to manipulate memory, access sensitive data, or execute arbitrary code.  
 Our goal is to overwrite the value stored at the address `0x804988c` and replace it with the number **64**.
 
 The `printf()` function requests only one mandatory argument. The others, if needed, are also stored on the stack before the call (the first argument being at the top). This means it keeps iterating over the stack as long as it finds a format specifier.  
-Furthermore, the function includes the format specifier `%n` which writes the number of printed characters into the address provided as its corresponding argument. If we input a memory address into the format string, and it matches the `%n` specifier, the number of written characters will be stored at this address.
+Furthermore, the function includes the format specifier `%n` which writes the number of printed characters into the address provided as its corresponding argument. If we input a memory address into the buffer of the format string, stored in the stack, and it matches the `%n` specifier, the number of written characters will be stored at this address.
 
-To complete this level, we have to first find the position of the user input on the stack during the call to `printf()` compared to the position its first argument.
+To complete this level, we have to first find the position of the format string in the stack during the call to `printf()` compared to the position of its first argument.
 
 ```
 (gdb) b printf
 Breakpoint 1 at 0x8048390
 (gdb) r
 Starting program: /home/user/level3/level3 
-AAAA
+AAAA   
 
 Breakpoint 1, 0xb7e78850 in printf () from /lib/i386-linux-gnu/libc.so.6
-(gdb) stepi
-0xb7e78851 in printf () from /lib/i386-linux-gnu/libc.so.6
-(gdb) info registers
-eax            0xbffff430       -1073744848
-ecx            0xb7fda005       -1208115195
-edx            0xb7fd28c4       -1208145724
-ebx            0xb7fd0ff4       -1208152076
-esp            0xbffff418       0xbffff418
-ebp            0xbffff638       0xbffff638
-esi            0x0      0
-edi            0x0      0
-eip            0xb7e78851       0xb7e78851 <printf+1>
-eflags         0x200292	[ AF SF IF ID ]
-cs             0x73     115
-ss             0x7b     123
-ds             0x7b     123
-es             0x7b     123
-fs             0x0      0
-gs             0x33     51
-(gdb) x/16wx 0xbffff418
-0xbffff418:     0xb7fd0ff4     0x080484da     0xbffff430     0x00000200
-0xbffff428:     0xb7fd1ac0     0xb7ff37d0     0x41414141     0xb7e2000a
-0xbffff438:     0x00000001     0xb7fef305     0xbffff498     0xb7fde2d4
-0xbffff448:     0xb7fde334     0x00000007     0x00000000     0xb7fde000
+(gdb) i r esp
+esp            0xbffff41c       0xbffff41c
+(gdb) x/8wx 0xbffff41c
+0xbffff41c:     0x080484da      0xbffff430      0x00000200      0xb7fd1ac0
+0xbffff42c:     0xb7ff37d0      0x41414141      0xb7e2000a      0x00000001
 ```
 
-We see that our string represented in hexadecimal as `0x41414141` is located at `0xbffff430`, and we find this address near the top of the stack. We confirm that our format string is in **4th** position in the stack after the first argument passed to `printf()`.
+We see that our string represented in hexadecimal as `0x41414141` is located at `0xbffff430`, and we find this address near the top of the stack (in second position). We confirm that our format string is in **4th** position in the stack after the first argument passed to `printf()`.
 
 Finally, with the position in mind, we input the target address followed by 3 `%(x)x` format specifiers and our final `%n` in fourth position, for a total of 64 characters.
 

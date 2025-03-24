@@ -20,7 +20,7 @@ level9: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **bonus0** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -122,7 +122,7 @@ End of assembler dump.
 Some functions calls have a weird name, but it is common in C++ to *mangle* functions names. In order to find the corresponding name, we can compare the addresses in the disassembled code with the ones from the list of functions.
 
 The `main()` function:
-- compares the argument count (in `[ebp + 0x8]`) and calls `exit()` if there is 1 or less
+- compares the argument count (in `[ebp + 0x8]`) and calls `exit()` if it is equal or less than 1
 - allocates memory on the heap when calling `_Znwj@plt`, which is in fact calling the `new` operator
 - creates instances of class `N` with `_ZN1NC2Ei`
 - calls the `setAnnotation()` method of `N` instances
@@ -139,44 +139,14 @@ Breakpoint 2 at 0x804863e
 Starting program: /home/user/level9/level9 AAAA BBBB
 
 Breakpoint 1, 0x0804861c in main ()
-(gdb) info registers
-eax            0x804a008	134520840
-ecx            0x0	0
-edx            0xb7eec440	-1209088960
-ebx            0xb7eebff4	-1209090060
-esp            0xbffff620	0xbffff620
-ebp            0xbffff648	0xbffff648
-esi            0x0	0
-edi            0x0	0
-eip            0x804861c	0x804861c <main+40>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+(gdb) i r eax
+eax            0x804a008        134520840
 (gdb) c
 Continuing.
 
 Breakpoint 2, 0x0804863e in main ()
-(gdb) info registers
-eax            0x804a078	134520952
-ecx            0x20f21	134945
-edx            0xb7eec440	-1209088960
-ebx            0x804a008	134520840
-esp            0xbffff620	0xbffff620
-ebp            0xbffff648	0xbffff648
-esi            0x0	0
-edi            0x0	0
-eip            0x804863e	0x804863e <main+74>
-eflags         0x200282	[ SF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+(gdb) i r eax
+eax            0x804a078        134520952
 ```
 
 The returned addresses are `0x804a008` and `0x804a078`.
@@ -204,65 +174,34 @@ Dump of assembler code for function _ZN1N13setAnnotationEPc:
 End of assembler dump.
 ```
 
-The `setAnnotation()` method calls `memcpy()`. We display registers information and hexdumps of the stack in order to understand which data is being passed by.
+The `setAnnotation()` method calls `memcpy()` to copy the content from `[ebp + 0xc]` to `[ebp + 0x8]`. We display registers information and hexdumps of the stack in order to understand which data is being passed by.
 
 ```
 (gdb) b* 0x0804871a
-Breakpoint 1 at 0x804871a
+Breakpoint 2 at 0x804871a
 (gdb) r AAAA BBBB
 Starting program: /home/user/level9/level9 AAAA BBBB
 
-Breakpoint 1, 0x0804871a in N::setAnnotation(char*) ()
-(gdb) info registers
-eax            0xbffff83d	-1073743811
-ecx            0x20f21	134945
-edx            0x6	6
-ebx            0x804a078	134520952
-esp            0xbffff600	0xbffff600
-ebp            0xbffff618	0xbffff618
-esi            0x0	0
-edi            0x0	0
-eip            0x804871a	0x804871a <N::setAnnotation(char*)+12>
-eflags         0x200286	[ PF SF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+Breakpoint 2, 0x0804871a in N::setAnnotation(char*) ()
+(gdb) i r eax
+eax            0xbffff83d       -1073743811
 (gdb) x/s 0xbffff83d
-0xbffff83d:	 "AAAA"
+0xbffff83d:      "AAAA"
 (gdb) b *0x08048733
-Breakpoint 2 at 0x8048733
+Breakpoint 3 at 0x8048733
 (gdb) c
 Continuing.
 
-Breakpoint 2, 0x08048733 in N::setAnnotation(char*) ()
-(gdb) info registers
-eax            0xbffff83d	-1073743811
-ecx            0x4000080d	1073743885
-edx            0x804a00c	134520844
-ebx            0x804a078	134520952
-esp            0xbffff600	0xbffff600
-ebp            0xbffff618	0xbffff618
-esi            0x0	0
-edi            0x0	0
-eip            0x8048733	0x8048733 <N::setAnnotation(char*)+37>
-eflags         0x200206	[ PF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+Breakpoint 3, 0x08048733 in N::setAnnotation(char*) ()
+(gdb) i r esp
+esp            0xbffff600       0xbffff600
 (gdb) x/4wx 0xbffff600
-0xbffff600:	0x0804a00c	0xbffff83d	0x00000004	0xb7f9b600
+0xbffff600:     0x0804a00c      0xbffff83d      0x00000004      0xb7f9b600
 ```
 
-![Diagram of memory zones](./resources/level9_diagram1.png)
+The `memcpy()` function is being called as follows: `memcpy(dest: 0x0804a00c, src: argv[1], n: return of strlen(argv[1]))`. The address `0x0804a00c` is located between the 2 addresses returned by the `new` operator, which means it might be exploitable.
 
-The `memcpy()` function is being called as follows: `memcpy(dest: 0x0804a00c, src: 0xbffff835, size: strlen(0xbffff835));`  
-The address `0x0804a00c` is located between the 2 addresses returned by the `new` operator, which means it might be exploitable, whereas the address `0xbffff835` holds `argv[1]`.  
+![Diagram of memory zones](./resources/level9_diagram1.png)
 
 The `setAnnotation()` is exploitable, but we also have to check if the value we insert into memory is used next in the `main()` function, otherwise it is useless.  
 At first sight, it seems the value in `[esp + 0x10]`, moved to the `eax` register, is being dereferenced quite a lot.
@@ -287,38 +226,23 @@ Breakpoint 1 at 0x8048680
 Starting program: /home/user/level9/level9 AAAA BBBB
 
 Breakpoint 1, 0x08048680 in main ()
-(gdb) info registers
-eax            0x804a078	134520952
-ecx            0x41414141	1094795585
-edx            0x804a010	134520848
-ebx            0x804a078	134520952
-esp            0xbffff620	0xbffff620
-ebp            0xbffff648	0xbffff648
-esi            0x0	0
-edi            0x0	0
-eip            0x8048680	0x8048680 <main+140>
-eflags         0x200287	[ CF PF SF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+(gdb) i r eax
+eax            0x804a078        134520952
 (gdb) x 0x804a078
-0x804a078:	0x08048848
+0x804a078:      0x08048848
 (gdb) x 0x08048848
-0x8048848 <_ZTV1N+8>:	0x0804873a
+0x8048848 <_ZTV1N+8>:   0x0804873a
 ```
 
 ![Diagram of dereferenced addresses](./resources/level9_diagram2.png)
 
-The relevant addresses are `0x0804a078`, `0x08048848` and `0x0804873a`. Among all of them, we only have control over the `0x08048848` address, which is the returned value from the call to the second `new` operator.
+The relevant addresses are `0x0804a078`, `0x08048848` and `0x0804873a`. Among all of them, we only have control over the `0x0804a078` address, which is located after the address `0x0804a00c` on the heap (the `dest` argument passed to `memcpy()`).
 
 With all these information in mind, our goal in order to complete this level is to pass as `argv[1]` a total of 112 bytes (`0x0804a078` - `0x0804a00c` = `0x6c` (108) + 4 bytes for the overwritten address) containing:
 - a shellcode to spawn a shell from a `system()` call
 - the address to the start of the copied buffer which points to our shellcode, and is gonna be called by `main()` after dereferencing it
 - a payload of 79 characters
-- the address of our shellcode incremented by 25 (the length of the shellcode) which is gonna be the address pointed by the second `[eax]`
+- the address of our shellcode incremented by 25 (the length of the shellcode) which corresponds to the address written right after the shellcode, and which is gonna be the address pointed by the second `[eax]`
 
 ![Diagram of dereferenced addresses with our input](./resources/level9_diagram3.png)
 

@@ -20,7 +20,7 @@ bonus0: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **bonus1** and has the setuid bit.
 
-We list the functions in the executable.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -57,7 +57,7 @@ Non-debugging symbols:
 0x0804867c  _fini
 ```
 
-There are 3 user defined functions: `main()`, `pp()` and `p()`.
+There are 3 user-defined functions: `main()`, `pp()` and `p()`.
 
 ```
 (gdb) disas main
@@ -78,7 +78,7 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-The `main()` function calls `pp()` and prints text to stdout with `gets()`.
+The `main()` function calls `pp()` and prints text to stdout with `puts()`.
 
 ```
 (gdb) disas pp
@@ -130,9 +130,9 @@ End of assembler dump.
 
 The `pp()` function:
 - calls `p()` function twice
-- calls `strcpy()`
+- calls `strcpy()` to copy the string from `[ebp - 0x30]` to `[ebp + 0x8]`
 - iterates on the string returned by `strcpy()` to replace the first `0` byte with `0x20` (space character)
-- calls `strcat()`
+- calls `strcat()` to append the string located at `[ebp - 0x1c]` to `[ebp + 0x8]`
 
 ```
 (gdb) disas p
@@ -166,18 +166,19 @@ End of assembler dump.
 
 The `p()` function:
 - calls `puts()` to print `-`
-- calls `read()` to read input from stdin
-- calls `strchr()` to find and replace the `\n` character with `\0`
-- calls `strncpy()` to copies the user input up to 20 characters max
+- calls `read()` to read user input from stdin
+- calls `strchr()` to find and replace the first `\n` character with `\0` in the `read()` buffer
+- calls `strncpy()` to copies the `read()` buffer to `[ebp + 0x8]`, up to a maximum of 20 characters
 
 After checking the different functions calls and their arguments, we conclude that:
-- the 2 copied strings read from stdin by `p()` are stored in the stack frame of `p()` next to each other
+- the 2 copied strings read from stdin by `p()` are stored in the stack frame of `pp()`, next to each other
 - `pp()` copies the first returned string by `p()`, and concatenates the second one to it, in the stack frame of `main()`
 
-The stack of the executable can be represented as follows:
+We draw a representation of the stack.
+
 ![Diagram of stack](./resources/bonus0_diagram1.png)
 
-We notice that there are 54 bytes between the start of the `dest` buffer of `strcpy()` and the `old eip`, in the `main()` stack frame. And from our ASM analysis, we know that the first `\n` character in user input is replaced by a `\0`. And as `strncpy()` in `p()` only copies up to 20 characters, we can write 20 bytes to the first string and then `strcpy()` will consider the first and second string as one. With `strcat()` and the `\0` replacement by a space, our final string may look like: `str1 + str2 + str2`, for a total of up to 60 characters, which is more than enough to override the `old eip` in the `main()` stack frame.
+We notice that there are 54 bytes between the start of the `dest` buffer of `strcpy()` and the `old eip`, in the `main()` stack frame. And from our ASM analysis, we know that the first `\n` character in user input is replaced by a `\0`. And as `strncpy()` in `p()` only copies up to 20 characters, we can write 20 bytes to the first string and then `strcpy()` will consider the first and second string as one. With `strcat()` and the `\0` replaced by a space, our final string may look like: `str1 + str2 + str2`, for a total of up to 60 characters, which is more than enough to override the `old eip` in the `main()` stack frame.
 
 Our goal is to insert a **shellcode** split between the 2 user inputs, followed by placeholder characters and the `0xbffff616` address in last position to override the `old eip` in the `main()` stack frame in order to call our shellcode.
 

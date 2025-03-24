@@ -20,7 +20,7 @@ bonus3: setuid setgid ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), 
 
 The file is owned by **end** and has the setuid bit.
 
-We list the functions in the executable with **GDB**.
+We list the functions inside the executable.
 
 ```
 (gdb) info functions
@@ -57,7 +57,7 @@ Non-debugging symbols:
 0x080486cc  _fini
 ```
 
-There is only 1 user defined functions: `main()`.
+There is only 1 user-defined function: `main()`.
 
 ```
 (gdb) disas main
@@ -139,15 +139,15 @@ End of assembler dump.
 ```
 
 The `main()` function:
-- calls `fopen("/home/user/end/.pass", "r")`
+- calls `fopen()` to open the file `/home/user/end/.pass`
 - iterates 33 times from `[esp + 0x18]`, 4 bytes by 4 bytes, to set the bytes to 0
 - quits the program if `argc` is not equal to 2
-- calls `fread()` to store the content of the opened file into `[esp + 0x18]` up to 66 bytes
+- calls `fread()` to store the content of the previously opened file into `[esp + 0x18]` up to 66 bytes
 - sets the `[esp + 0x59]` byte to 0 (the 66th byte previously stored)
-- calls `atoi()` with `argv[1]` and uses the converted integer as an index to set a byte to 0 on the stack
+- calls `atoi()` to convert `argv[1]` into an `int`, and uses the converted value as an index to set a byte to 0 on the stack
 - calls `fread()` to store the remaining content of the opened file into `[esp + 0x18 + 0x42]` up to 65 bytes
 - calls `fclose()` to close the file pointer
-- calls `strcmp()` to compare `argv[1]` with the stored string in `[esp + 0x18]` and calls `execl("/bin/sh")` if the return value is 0
+- calls `strcmp()` to compare `argv[1]` with the stored string in `[esp + 0x18]` and calls `execl()` to execute `/bin/sh` if the return value is 0
 - calls `puts()`, if the previous comparison does not return 0, to write the string stored in `[esp + 0x18 + 0x42]`
 
 We draw a diagram of the stack.
@@ -157,7 +157,7 @@ We draw a diagram of the stack.
 From our analysis of the ASM, we figure out that we must succeed in executing the `execl()` in order to complete this level.  
 Using the `puts()` function is useless because it reads from the second buffer, which is not gonna contain the start of the password.
 
-The only way to pass the `strmcp()` condition is to compare it with a `\0` character since the function is comparing from `[esp + 0x18]` and `argv[1]` is being used as an index to store 0 somewhere in the stack, from this buffer. If we pass 0 as `argv[1]`, then `[esp + 0x18]` is gonna be equal to 0, but not the value of `argv[1]` because 0 in ASCII is equal to 0, which means we still won't pass the condition.
+The only way to pass the `strmcp()` condition is to compare it with a `\0` character since the function is comparing from `[esp + 0x18]` and `argv[1]` is being used as an index to store 0 somewhere in the stack, from this buffer. If we pass 0 as `argv[1]`, then `[esp + 0x18]` is gonna be equal to 0, but not the value of `argv[1]` because 0 in ASCII is not equal to 0, which means we still won't pass the condition.
 
 We seek some information about `atoi()` on the web and one sentence catches our attention:
 > If the first sequence of non-whitespace characters in str is not a valid integral number, or if no such sequence exists because either str is empty or it contains only whitespace characters, no conversion is performed and zero is returned.
